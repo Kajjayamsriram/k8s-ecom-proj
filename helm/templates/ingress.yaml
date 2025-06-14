@@ -1,0 +1,19 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-db-access-from-shipping
+  namespace: robot-shop
+spec:
+  podSelector:
+    matchLabels:
+      app: mysql          # select your DB pod(s)
+  policyTypes:
+  - Ingress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: shipping    # only pods with this label can access the DB pod
+    ports:
+    - protocol: TCP
+      port: 8080
