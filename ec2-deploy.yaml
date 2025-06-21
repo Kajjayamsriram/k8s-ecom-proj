@@ -53,7 +53,7 @@
       amazon.aws.ec2_vpc_route_table:
         vpc_id: "{{ vpc.vpc.id }}"
         region: "{{ region }}"
-        subnets: 
+        subnets:
           - "{{ public_subnet.subnet.id }}"
         tags:
           Name: public-route-table
@@ -109,8 +109,6 @@
         region: "{{ region }}"
         exact_count: 2
         tags:
-          Name: "Worker Node"
-      register: ec2worker
           Environment: Testing
       register: ec2worker
 
