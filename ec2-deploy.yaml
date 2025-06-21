@@ -95,8 +95,19 @@
         region: "{{ region }}"
         tags:
           Environment: Testing
+<<<<<<< HEAD
       register: ec2
     - name: Launch EC2 Instance in Public Subnet as Wroker nodes
+=======
+<<<<<<< HEAD
+      register: ec2
+    - name: Launch EC2 Instance in Public Subnet as Wroker nodes
+=======
+      register: ec2master
+
+    - name: Launch EC2 Instance in Public Subnet as Worker nodes
+>>>>>>> 7496a37 (updated infra deploy)
+>>>>>>> cfa47ba (new chnages to ec2-deploy)
       amazon.aws.ec2_instance:
         name: "Worker Node"
         key_name: "host-key"  # Ensure this key exists in your AWS region
@@ -109,5 +120,30 @@
         region: "{{ region }}"
         exact_count: 2
         tags:
+<<<<<<< HEAD
           Name: "Worker Node"
       register: ec2worker
+=======
+<<<<<<< HEAD
+          Name: "Worker Node"
+      register: ec2worker
+=======
+          Environment: Testing
+      register: ec2worker
+
+    - name: Gather information using tag name
+      amazon.aws.ec2_instance_info:
+        filters:
+          "tag:Name": ["Master", "Worker Node"]
+      register: ec2_info
+
+    - name: Show instance Name, ID, and Public IP
+      debug:
+        msg: >
+          {% for instance in ec2_info.instances %}
+          Name: {{ instance.tags.Name | default('No Name') }},
+          ID: {{ instance.instance_id }},
+          Public IP: {{ instance.public_ip_address | default('N/A') }}
+          {% endfor %}
+>>>>>>> 7496a37 (updated infra deploy)
+>>>>>>> cfa47ba (new chnages to ec2-deploy)
