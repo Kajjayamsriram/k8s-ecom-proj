@@ -7,6 +7,7 @@
     az_1: us-east-1a
     az_2: us-east-1b
     sg_name: ecom-sg
+    instance_types: t2.medium
     ami_id: ami-020cba7c55df1f615
 
   tasks:
@@ -87,7 +88,7 @@
         name: "Master"
         key_name: "host-key"  # Ensure this key exists in your AWS region
         subnet_id: "{{ public_subnet.subnet.id }}"
-        instance_type: t2.micro
+        instance_type: "{{ instance_types }}"
         security_group: "{{ security_group.group_id }}"
         network:
           assign_public_ip: true
@@ -101,7 +102,7 @@
         name: "Worker Node"
         key_name: "host-key"  # Ensure this key exists in your AWS region
         subnet_id: "{{ public_subnet.subnet.id }}"
-        instance_type: t2.micro
+        instance_type: "{{ instance_types }}"
         security_group: "{{ security_group.group_id }}"
         network:
           assign_public_ip: true
