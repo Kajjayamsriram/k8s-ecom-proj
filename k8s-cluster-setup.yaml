@@ -5,28 +5,38 @@
   gather_facts: false
   tasks:
   - name: Set hostname to identify host
-    shell: |
-      sudo hostnamectl set-hostname master
+    shell: hostnamectl set-hostname master
+    args:
+      creates: /etc/hostname
 
   - name: Disable swap
     shell: swapoff -a
+    when: ansible_swaptotal_mb > 0
 
   - name: enable ip packet forwarding
     shell: |
       echo "net.ipv4.ip_forward = 1" | sudo tee /etc/sysctl.d/k8s.conf
       sysctl --system
+    args:
+      creates: /etc/sysctl.d/k8s.conf
 
   - name: Update the system
-    shell: sudo apt update && apt upgrade -y
+    apt:
+      update_cache: yes
+      upgrade: dist
 
   - name: Install containerd
-    shell: sudo apt-get install containerd -y
+    apt:
+     name: containerd
+     state: present
 
   - name: Install container network cni plugin
     shell: |
       mkdir -p /opt/cni/bin
       wget https://github.com/containernetworking/plugins/releases/download/v1.7.1/cni-plugins-linux-amd64-v1.7.1.tgz
       tar Cxzvf /opt/cni/bin cni-plugins-linux-amd64-v1.7.1.tgz
+    args:
+      creates: /opt/cni/bin/bridge
 
   - name: configure containerd
     shell: |
@@ -34,22 +44,31 @@
       containerd config default > /etc/containerd/config.toml
       sed -i 's/^SystemdCgroup\s*=\s*false/SystemdCgroup = true/' /etc/containerd/config.toml
       systemctl restart containerd
+    args:
+      creates: /etc/containerd/config.toml
 
   - name: To add k8s repos and install tools
     shell: |
-      sudo apt-get update apt-get install -y apt-transport-https ca-certificates curl gpg
+      mkdir -p /etc/apt/keyrings
       curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.33/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-      sudo chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
       echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.33/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
-      sudo chmod 644 /etc/apt/sources.list.d/kubernetes.list
-      sudo apt-get update -y
-      sudo apt-get install kubelet kubeadm -y
+      chmod 644 /etc/apt/sources.list.d/kubernetes.list
+    args:
+      creates: /etc/apt/sources.list.d/kubernetes.list
 
-  - name: Install kubelet in controlplane
-    shell: sudo apt-get install kubectl -y
+  - name: Install kubelet and kubeadm
+    apt:
+      name:
+        - kubelet
+        - kubeadm
+        - kubectl
+      state: present
+      update_cache: yes
 
-  - name: To intialise cluster(Master Node)
+  - name: Initialize Kubernetes cluster
     shell: kubeadm init --pod-network-cidr=192.168.0.0/16
+    args:
+        creates: /etc/kubernetes/admin.conf
 
   - name: Genearte join command in master
     shell: sudo kubeadm token create --print-join-command
@@ -64,41 +83,61 @@
       mkdir -p $HOME/.kube
       sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
       sudo chown $(id -u):$(id -g) $HOME/.kube/config
+    args:
+      creates: /root/.kube/config
+
+  - name: Check if Calico CRD exists
+    shell: kubectl get crd installations.operator.tigera.io
+    register: calico_check
+    ignore_errors: true
 
   - name: Install cni plugin
     shell: |
       kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/tigera-operator.yaml
+      sleep 20
       kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/custom-resources.yaml
-###################################
+    when: calico_check.rc != 0
+
 #Worker nodes k8s install
-###################################
+
 - name: Deploying k8s in worker node
   hosts: workers
   become: yes
-  gather_facts: false    
+  gather_facts: false
   tasks:
   - name: Set hostname to identify
-    shell: |
-      hostnamectl set-hostname worker
-	
+    shell: hostnamectl set-hostname worker
+    args:
+    creates: /etc/hostname
+
   - name: Disable swap
     shell: swapoff -a
+    when: ansible_swaptotal_mb > 0
 	
   - name: enable ip packet forwarding
     shell: |
       echo "net.ipv4.ip_forward = 1" | sudo tee /etc/sysctl.d/k8s.conf
       sysctl --system
+    args:
+      creates: /etc/sysctl.d/k8s.conf
+
   - name: Update the system
-    shell: sudo apt update && apt upgrade -y
+    apt:
+      update_cache: yes
+      upgrade: dist
 	
   - name: Install containerd 
-    shell: sudo apt-get install containerd
+    apt:
+     name: containerd
+     state: present
 	
   - name: Install cni plugin 
     shell: |
       mkdir -p /opt/cni/bin
       wget https://github.com/containernetworking/plugins/releases/download/v1.7.1/cni-plugins-linux-amd64-v1.7.1.tgz
       tar Cxzvf /opt/cni/bin cni-plugins-linux-amd64-v1.7.1.tgz
+    args:
+      creates: /opt/cni/bin/bridge
 	    
   - name: configure containerd
     shell: |
@@ -106,16 +145,31 @@
       containerd config default > /etc/containerd/config.toml
       sed -i 's/^SystemdCgroup *= *false/SystemdCgroup = true/' /etc/containerd/config.toml
       systemctl restart containerd
+    args:
+      creates: /etc/containerd/config.toml
 	  
   - name: To add k8s repos and install tools
     shell: |
-      sudo apt-get update apt-get install -y apt-transport-https ca-certificates curl gpg
+      mkdir -p /etc/apt/keyrings
       curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.33/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-      sudo chmod 644 /etc/apt/keyrings/kubernetes-apt-keyring.gpg
       echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.33/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
-      sudo chmod 644 /etc/apt/sources.list.d/kubernetes.list
-      sudo apt-get update -y
-      sudo apt-get install kubelet kubeadm -y
-	  
-  - name: To join to master node
-    shell: "{{ join_command.stdout }}"
+      chmod 644 /etc/apt/sources.list.d/kubernetes.list
+    args:
+      creates: /etc/apt/sources.list.d/kubernetes.list
+
+  - name: Install kubelet and kubeadm
+    apt:
+      name:
+        - kubelet
+        - kubeadm
+      state: present
+      update_cache: yes
+
+  - name: Check if node already joined the cluster
+    stat:
+      path: /etc/kubernetes/kubelet.conf
+    register: kubelet_conf_check
+
+- name: Join to master node
+  shell: "{{ hostvars[groups['master'][0]].join_command }}"
+  when: not kubelet_conf_check.stat.exists
