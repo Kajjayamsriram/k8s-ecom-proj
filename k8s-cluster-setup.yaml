@@ -6,8 +6,6 @@
   tasks:
   - name: Set hostname to identify host
     shell: hostnamectl set-hostname master
-    args:
-      creates: /etc/hostname
 
   - name: Disable swap
     shell: swapoff -a
@@ -56,7 +54,7 @@
     args:
       creates: /etc/apt/sources.list.d/kubernetes.list
 
-  - name: Install kubelet and kubeadm
+  - name: Install kubelet and kubeadm and kubectl
     apt:
       name:
         - kubelet
@@ -69,7 +67,13 @@
     shell: kubeadm init --pod-network-cidr=192.168.0.0/16
     args:
         creates: /etc/kubernetes/admin.conf
-
+  - name: Wait for Kubernetes API to become responsive
+    shell: |
+      kubectl version --kubeconfig=/etc/kubernetes/admin.conf
+    register: result
+    retries: 10
+    delay: 15
+    until: result.rc == 0
   - name: Genearte join command in master
     shell: sudo kubeadm token create --print-join-command
     register: join_output
@@ -94,14 +98,12 @@
   - name: Install Calico operator (only if CRD doesn't exist)
     shell: kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/tigera-operator.yaml
     when: calico_crd_check.rc != 0
-
   - name: Wait for Calico CRD to be available
     shell: kubectl get crd installations.operator.tigera.io
     register: calico_wait
     retries: 10
     delay: 10
     until: calico_wait.rc == 0
-
   - name: Check if Calico Installation exists
     shell: kubectl get installation default
     register: calico_installation_check
@@ -117,10 +119,8 @@
   gather_facts: true
   tasks:
   - name: Set hostname to identify
-    shell: hostnamectl set-hostname worker
-    args:
-    creates: /etc/hostname
-
+    hostname:
+      name: "{{ inventory_hostname }}"
   - name: Disable swap
     shell: swapoff -a
     when: ansible_swaptotal_mb > 0
@@ -137,12 +137,12 @@
       update_cache: yes
       upgrade: dist
 
-  - name: Install containerd 
+  - name: Install containerd
     apt:
      name: containerd
      state: present
 
-  - name: Install cni plugin 
+  - name: Install cni plugin
     shell: |
       mkdir -p /opt/cni/bin
       wget https://github.com/containernetworking/plugins/releases/download/v1.7.1/cni-plugins-linux-amd64-v1.7.1.tgz
@@ -181,6 +181,6 @@
       path: /etc/kubernetes/kubelet.conf
     register: kubelet_conf_check
 
-- name: Join to master node
-  shell: "{{ hostvars[groups['master'][0]].join_command }}"
-  when: not kubelet_conf_check.stat.exists
+  - name: Join to master node
+    shell: "{{ hostvars[groups['master'][0]].join_command }}"
+    when: not kubelet_conf_check.stat.exists
