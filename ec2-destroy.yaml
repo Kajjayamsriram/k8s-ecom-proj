@@ -43,11 +43,13 @@
 
     - name: Delete Subnets
       amazon.aws.ec2_vpc_subnet:
-        region: "{{ region }}"
-        subnet_id: "{{ item.id }}"
         state: absent
-      loop: "{{ subnet_info.subnets }}"
-      when: subnet_info.subnets is defined
+        vpc_id: "{{ item.vpc_id }}"
+        cidr: "{{ item.cidr_block }}"
+        az: "{{ item.availability_zone }}"
+        region: "{{ region }}"
+      loop: "{{ subnet_info.subnets | default([]) }}"
+      when: subnet_info.subnets is defined and subnet_info.subnets | length > 0
 
     - name: Detach and Delete Internet Gateway
       amazon.aws.ec2_vpc_igw:
@@ -68,9 +70,13 @@
       amazon.aws.ec2_vpc_route_table:
         region: "{{ region }}"
         route_table_id: "{{ item.id }}"
+        lookup: id
         state: absent
-      loop: "{{ rt_info.route_tables }}"
-      when: rt_info.route_tables is defined
+      loop: "{{ rt_info.route_tables | default([]) }}"
+      when:
+        - rt_info.route_tables is defined and rt_info.route_tables | length > 0
+        - item.associations is defined and (item.associations | selectattr('main', 'equalto', true) | list | length == 0) 
+#Apart from main every routeable will be deleted.
 
     - name: Delete the VPC
       amazon.aws.ec2_vpc_net:
