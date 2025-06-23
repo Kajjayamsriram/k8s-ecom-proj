@@ -112,7 +112,7 @@
   - name: Disable swap
     shell: swapoff -a
     when: ansible_swaptotal_mb > 0
-	
+
   - name: enable ip packet forwarding
     shell: |
       echo "net.ipv4.ip_forward = 1" | sudo tee /etc/sysctl.d/k8s.conf
@@ -124,12 +124,12 @@
     apt:
       update_cache: yes
       upgrade: dist
-	
+
   - name: Install containerd 
     apt:
      name: containerd
      state: present
-	
+
   - name: Install cni plugin 
     shell: |
       mkdir -p /opt/cni/bin
@@ -137,7 +137,7 @@
       tar Cxzvf /opt/cni/bin cni-plugins-linux-amd64-v1.7.1.tgz
     args:
       creates: /opt/cni/bin/bridge
-	    
+
   - name: configure containerd
     shell: |
       mkdir /etc/containerd
@@ -146,7 +146,7 @@
       systemctl restart containerd
     args:
       creates: /etc/containerd/config.toml
-	  
+
   - name: To add k8s repos and install tools
     shell: |
       mkdir -p /etc/apt/keyrings
