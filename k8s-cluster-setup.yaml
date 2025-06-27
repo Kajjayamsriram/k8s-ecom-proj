@@ -4,8 +4,13 @@
   become: yes
   gather_facts: true
   tasks:
-  - name: Set hostname to identify host
-    shell: hostnamectl set-hostname master
+    - name: Set hostname to identify
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+      ignore_errors: true
+    - name: Debug inventory_hostname
+      debug:
+        msg: "Current hostname is {{ inventory_hostname }}"
 
   - name: Disable swap
     shell: swapoff -a
@@ -117,9 +122,14 @@
   become: yes
   gather_facts: true
   tasks:
-  - name: Set hostname to identify
-    hostname:
-      name: "{{ inventory_hostname }}"
+    - name: Set hostname to identify
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+      ignore_errors: true
+    - name: Debug inventory_hostname
+      debug:
+        msg: "Current hostname is {{ inventory_hostname }}"
+
   - name: Disable swap
     shell: swapoff -a
 
