@@ -102,6 +102,11 @@
           assign_public_ip: true
         image_id: "{{ ami_id }}"
         region: "{{ region }}"
+        volumes:
+          - device_name: /dev/sda1
+            ebs:
+              volume_size: 25
+              delete_on_termination: true
         state: present
         tags:
           Environment: Testing
