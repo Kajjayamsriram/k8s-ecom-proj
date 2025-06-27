@@ -9,7 +9,6 @@
 
   - name: Disable swap
     shell: swapoff -a
-    when: ansible_swaptotal_mb > 0
 
   - name: enable ip packet forwarding
     shell: |
@@ -123,7 +122,6 @@
       name: "{{ inventory_hostname }}"
   - name: Disable swap
     shell: swapoff -a
-    when: ansible_swaptotal_mb > 0
 
   - name: enable ip packet forwarding
     shell: |
