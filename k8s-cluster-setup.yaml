@@ -12,110 +12,97 @@
       debug:
         msg: "Current hostname is {{ inventory_hostname }}"
 
-  - name: Disable swap
-    shell: swapoff -a
+    - name: Disable swap
+      shell: swapoff -a
+    - name: enable ip packet forwarding
+      shell: |
+        echo "net.ipv4.ip_forward = 1" | sudo tee /etc/sysctl.d/k8s.conf
+        sysctl --system
+      args:
+        creates: /etc/sysctl.d/k8s.conf
+    - name: Update the system
+      apt:
+        update_cache: yes
 
-  - name: enable ip packet forwarding
-    shell: |
-      echo "net.ipv4.ip_forward = 1" | sudo tee /etc/sysctl.d/k8s.conf
-      sysctl --system
-    args:
-      creates: /etc/sysctl.d/k8s.conf
+    - name: Install containerd
+      apt:
+        name: containerd
+        state: present
+    - name: Enable and start containerd
+      ansible.builtin.systemd:
+        name: containerd
+        enabled: yes
+        state: started
 
-  - name: Update the system
-    apt:
-      update_cache: yes
-      upgrade: dist
+    - name: To add k8s repos and install tools
+      shell: |
+        mkdir -p /etc/apt/keyrings
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.33/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.33/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+        chmod 644 /etc/apt/sources.list.d/kubernetes.list
+      args:
+        creates: /etc/apt/sources.list.d/kubernetes.list
 
-  - name: Install containerd
-    apt:
-     name: containerd
-     state: present
-
-  - name: Install container network cni plugin
-    shell: |
-      mkdir -p /opt/cni/bin
-      wget https://github.com/containernetworking/plugins/releases/download/v1.7.1/cni-plugins-linux-amd64-v1.7.1.tgz
-      tar Cxzvf /opt/cni/bin cni-plugins-linux-amd64-v1.7.1.tgz
-    args:
-      creates: /opt/cni/bin/bridge
-
-  - name: configure containerd
-    shell: |
-      mkdir /etc/containerd
-      containerd config default > /etc/containerd/config.toml
-      sed -i 's/^SystemdCgroup\s*=\s*false/SystemdCgroup = true/' /etc/containerd/config.toml
-      systemctl restart containerd
-    args:
-      creates: /etc/containerd/config.toml
-
-  - name: To add k8s repos and install tools
-    shell: |
-      mkdir -p /etc/apt/keyrings
-      curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.33/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-      echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.33/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
-      chmod 644 /etc/apt/sources.list.d/kubernetes.list
-    args:
-      creates: /etc/apt/sources.list.d/kubernetes.list
-
-  - name: Install kubelet and kubeadm and kubectl
-    apt:
-      name:
+    - name: Install kubelet and kubeadm and kubectl
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+        update_cache: yes
+    - name: Hold kubelet, kubeadm, and kubectl
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
         - kubelet
         - kubeadm
         - kubectl
-      state: present
-      update_cache: yes
 
-  - name: Initialize Kubernetes cluster
-    shell: kubeadm init --pod-network-cidr=192.168.0.0/16
-    args:
+    - name: Enable and start containerd
+      ansible.builtin.systemd:
+        name: containerd
+        enabled: yes
+        state: started
+
+    - name: Initialize Kubernetes cluster
+      shell: kubeadm init --pod-network-cidr=192.168.0.0/16
+      args:
         creates: /etc/kubernetes/admin.conf
-  - name: Wait for Kubernetes API to become responsive
-    shell: |
-      kubectl version --kubeconfig=/etc/kubernetes/admin.conf
-    register: result
-    retries: 10
-    delay: 15
-    until: result.rc == 0
-  - name: Genearte join command in master
-    shell: sudo kubeadm token create --print-join-command
-    register: join_output
+    - name: Wait for Kubernetes API to become responsive
+      shell: |
+        kubectl version --kubeconfig=/etc/kubernetes/admin.conf
+      register: result
+      retries: 10
+      delay: 15
+      until: result.rc == 0
+    - name: Genearte join command in master
+      shell: sudo kubeadm token create --print-join-command
+      register: join_output
 
-  - name: show join command output
-    set_fact:
-      join_command: "{{ join_output.stdout }}"
+    - name: show join command output
+      set_fact:
+        join_command: "{{ join_output.stdout }}"
 
-  - name: configure kubectl access
-    shell: |
-      mkdir -p $HOME/.kube
-      sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-      sudo chown $(id -u):$(id -g) $HOME/.kube/config
-    args:
-      creates: /root/.kube/config
+    - name: configure kubectl access
+      shell: |
+        mkdir -p $HOME/.kube
+        sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+        sudo chown $(id -u):$(id -g) $HOME/.kube/config
+      args:
+        creates: /root/.kube/config
 
-  - name: Check if Calico CRD exists
-    shell: kubectl get crd installations.operator.tigera.io
-    register: calico_crd_check
-    ignore_errors: true
+    - name: Install  Calico networking manifest for the Kubernetes.
+      shell: curl -sSL https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/calico.yaml -o /root/calico.yaml
+      args:
+        creates: /root/calico.yaml
+      register: calico_installation_check
 
-  - name: Install Calico operator (only if CRD doesn't exist)
-    shell: kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/tigera-operator.yaml
-    when: calico_crd_check.rc != 0
-  - name: Wait for Calico CRD to be available
-    shell: kubectl get crd installations.operator.tigera.io
-    register: calico_wait
-    retries: 10
-    delay: 10
-    until: calico_wait.rc == 0
-  - name: Check if Calico Installation exists
-    shell: kubectl get installation default
-    register: calico_installation_check
-    ignore_errors: yes
+    - name: Apply Calico manifest
+      shell: kubectl apply -f calico.yaml
+      when: calico_installation_check.rc != 0
 
-  - name: Apply Calico custom resources if Installation doesn't exist
-    shell: kubectl create -f https://raw.githubusercontent.com/projectcalico/calico/v3.30.2/manifests/custom-resources.yaml
-    when: calico_installation_check.rc != 0
 #Worker nodes k8s install
 - name: Deploying k8s in worker node
   hosts: workers
@@ -130,65 +117,55 @@
       debug:
         msg: "Current hostname is {{ inventory_hostname }}"
 
-  - name: Disable swap
-    shell: swapoff -a
+    - name: Disable swap
+      shell: swapoff -a
+    - name: enable ip packet forwarding
+      shell: |
+        echo "net.ipv4.ip_forward = 1" | sudo tee /etc/sysctl.d/k8s.conf
+        sysctl --system
+      args:
+        creates: /etc/sysctl.d/k8s.conf
+    - name: Update the system
+      apt:
+        update_cache: yes
 
-  - name: enable ip packet forwarding
-    shell: |
-      echo "net.ipv4.ip_forward = 1" | sudo tee /etc/sysctl.d/k8s.conf
-      sysctl --system
-    args:
-      creates: /etc/sysctl.d/k8s.conf
+    - name: Install containerd
+      apt:
+       name: containerd
+       state: present
+    - name: Enable and start containerd
+      ansible.builtin.systemd:
+        name: containerd
+        enabled: yes
+        state: started
 
-  - name: Update the system
-    apt:
-      update_cache: yes
-      upgrade: dist
+    - name: To add k8s repos and install tools
+      shell: |
+        mkdir -p /etc/apt/keyrings
+        curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.33/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.33/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+        chmod 644 /etc/apt/sources.list.d/kubernetes.list
+      args:
+        creates: /etc/apt/sources.list.d/kubernetes.list
 
-  - name: Install containerd
-    apt:
-     name: containerd
-     state: present
+    - name: Install kubelet and kubeadm
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+        state: present
+        update_cache: yes
+    - name: Enable and start kubelet
+      ansible.builtin.systemd:
+        name: kubelet
+        enabled: yes
+        state: started
 
-  - name: Install cni plugin
-    shell: |
-      mkdir -p /opt/cni/bin
-      wget https://github.com/containernetworking/plugins/releases/download/v1.7.1/cni-plugins-linux-amd64-v1.7.1.tgz
-      tar Cxzvf /opt/cni/bin cni-plugins-linux-amd64-v1.7.1.tgz
-    args:
-      creates: /opt/cni/bin/bridge
+    - name: Check if node already joined the cluster
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf_check
 
-  - name: configure containerd
-    shell: |
-      mkdir /etc/containerd
-      containerd config default > /etc/containerd/config.toml
-      sed -i 's/^SystemdCgroup *= *false/SystemdCgroup = true/' /etc/containerd/config.toml
-      systemctl restart containerd
-    args:
-      creates: /etc/containerd/config.toml
-
-  - name: To add k8s repos and install tools
-    shell: |
-      mkdir -p /etc/apt/keyrings
-      curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.33/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
-      echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.33/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
-      chmod 644 /etc/apt/sources.list.d/kubernetes.list
-    args:
-      creates: /etc/apt/sources.list.d/kubernetes.list
-
-  - name: Install kubelet and kubeadm
-    apt:
-      name:
-        - kubelet
-        - kubeadm
-      state: present
-      update_cache: yes
-
-  - name: Check if node already joined the cluster
-    stat:
-      path: /etc/kubernetes/kubelet.conf
-    register: kubelet_conf_check
-
-  - name: Join to master node
-    shell: "{{ hostvars[groups['master'][0]].join_command }}"
-    when: not kubelet_conf_check.stat.exists
+    - name: Join to master node
+      shell: "{{ hostvars[groups['master'][0]].join_command }}"
+      when: not kubelet_conf_check.stat.exists
