@@ -71,18 +71,14 @@
         vpc_id: "{{ vpc.vpc.id }}"
         region: "{{ region }}"
         rules:
-          - proto: tcp
-            from_port: 22
-            to_port: 22
-            cidr_ip: 0.0.0.0/0
-          - proto: tcp
-            from_port: 6443
-            to_port: 6443
-            cidr_ip: 192.168.1.0/24
-          - proto: tcp
-            from_port: 8080
-            to_port: 8080
-            cidr_ip: 192.168.1.0/24
+          - { proto: tcp, from_port: 22,    to_port: 22,    cidr_ip: 0.0.0.0/0 }
+          - { proto: tcp, from_port: 2379,  to_port: 2380,  cidr_ip: 192.168.1.0/24 }
+          - { proto: tcp, from_port: 10250, to_port: 10259, cidr_ip: 192.168.1.0/24 }
+          - { proto: tcp, from_port: 6443,  to_port: 6443,  cidr_ip: 192.168.1.0/24 }
+          - { proto: tcp, from_port: 8080,  to_port: 8080,  cidr_ip: 192.168.1.0/24 }
+          - { proto: tcp, from_port: 30000,  to_port: 32767,  cidr_ip: 192.168.1.0/24 }
+          - { proto: udp, from_port: 30000,  to_port: 32767,  cidr_ip: 192.168.1.0/24 }
+          - { proto: tcp, from_port: 80,  to_port: 80,  cidr_ip: 0.0.0.0.0/0 }
         rules_egress:
           - proto: all
             cidr_ip: 0.0.0.0/0
@@ -105,7 +101,7 @@
         volumes:
           - device_name: /dev/sda1
             ebs:
-              volume_size: 25
+              volume_size: 10
               delete_on_termination: true
         state: present
         tags:
@@ -122,6 +118,10 @@
           assign_public_ip: true
         image_id: "{{ ami_id }}"
         region: "{{ region }}"
+        volumes:
+          - device_name: /dev/sda1
+            ebs:
+              volume_size: 10
         exact_count: 2
         state: present
         tags:
